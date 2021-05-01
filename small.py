@@ -11,11 +11,14 @@ from time import time
 
 from fuse import FUSE, FuseOSError, Operations, LoggingMixIn
 
-import json
+import format
+import os
 
 if not hasattr(__builtins__, 'bytes'):
     bytes = str
 
+def get_file_name(block_num):
+    return disktools.read_block(block_num)[22:38].decode()
 
 class Small(LoggingMixIn, Operations):
     'Example memory filesystem. Supports only one level of files.'
@@ -26,55 +29,47 @@ class Small(LoggingMixIn, Operations):
     We can store the file data in the other 12 blocks.
     """
     def __init__(self):
-        # contains file attributes.
-        self.files = {}
-        # contains file data.
-        self.data = defaultdict(bytes)
-
-        # the id for the file.
         self.fd = 0
-        # current time.
-        now = time()
-
-        """
-        File metadata:
-        MODE # 2 bytes
-        UID # 2 bytes
-        GID # 2 bytes
-        NLINKS # 1 byte
-        SIZE # 2 bytes, size of file in bytes
-        CTIME # 4 bytes
-        MTIME # 4 bytes
-        ATIME # 4 bytes
-        LOCATION # up to you how you do this
-        NAME # can be here or elsewhere, 16 byte length allowed
-        = 37 bytes minimum.
-        One block = 64 bytes.
-
-        Thus, the first 5 blocks will contain metadata.
-        """
-
-        # attributes of the root.
-        self.files['/'] = dict(
-            st_mode=(S_IFDIR | 0o755),
-            st_ctime=now,
-            st_mtime=now,
-            st_atime=now,
-            st_nlink=2,
-            st_uid=1000,
-            st_gid=1000)
-
-    def print_status(self):
-        print(json.dumps(self.files))
+        # Find out which blocks are empty and which are full.
+        for i in range(len(format.empty_file_block_list)):
+            if disktools.bytes_to_int(disktools.read_block(i)[18:19]) != 0:
+                format.empty_file_block_list[i] = False
 
     def chmod(self, path, mode):
-        self.files[path]['st_mode'] &= 0o770000
-        self.files[path]['st_mode'] |= mode
+        if (path == "/"):
+            file_name = "/"
+        else:
+            file_name = os.path.basename(path)
+        
+        # find the file that we are trying to write to.
+        for i in range(len(format.empty_file_block_list)):
+            if disktools.read_block(i)[22:22+len(file_name)].decode() == file_name:
+                block = disktools.read_block(i)
+                value = disktools.bytes_to_int(block[0:2]) & 0o770000
+                block[0:2] = disktools.int_to_bytes(value | mode, 2)
+                disktools.write_block(i, block)
+                break      
+
         return 0
 
     def chown(self, path, uid, gid):
-        self.files[path]['st_uid'] = uid
-        self.files[path]['st_gid'] = gid
+        if (path == "/"):
+            file_name = "/"
+        else:
+            file_name = os.path.basename(path)
+
+        print(disktools.read_block(0))
+        
+        # find the file that we are trying to write to.
+        for i in range(len(format.empty_file_block_list)):
+            if disktools.read_block(i)[22:22+len(file_name)].decode() == file_name:
+                block = disktools.read_block(i)
+                block[2:4] = disktools.int_to_bytes(uid, 2)
+                block[4:6] = disktools.int_to_bytes(gid, 2)
+                disktools.write_block(i, block)
+                break
+
+        print(disktools.read_block(0))
 
     # adds a new file by adding file attributes to the files dictionary.
     # whenever a file is created, fd will be incremented and returned (fd is basically the id for the file).
@@ -88,8 +83,6 @@ class Small(LoggingMixIn, Operations):
             st_ctime=time(),
             st_mtime=time(),
             st_atime=time(),
-            st_uid="test",
-            st_gid="test",
             st_uid=1000,
             st_gid=1000)
 
@@ -100,8 +93,6 @@ class Small(LoggingMixIn, Operations):
     def getattr(self, path, fh=None):
         if path not in self.files:
             raise FuseOSError(ENOENT)
-
-        self.print_status()
 
         return self.files[path]
 

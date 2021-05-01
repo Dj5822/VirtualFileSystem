@@ -24,8 +24,8 @@ One block = 64 bytes.
 def write_metadata(block_num, metadata):
     block = disktools.read_block(block_num)
     block[0:2]=disktools.int_to_bytes(metadata['st_mode'], 2)
-    block[2:4]=disktools.int_to_bytes(metadata['st_mode'], 2)
-    block[4:6]=disktools.int_to_bytes(metadata['st_mode'], 2)
+    block[2:4]=disktools.int_to_bytes(metadata['st_uid'], 2)
+    block[4:6]=disktools.int_to_bytes(metadata['st_gid'], 2)
     
     block[6:10]=disktools.int_to_bytes(int(metadata['st_ctime']), 4)
     block[10:14]=disktools.int_to_bytes(int(metadata['st_mtime']), 4)
@@ -35,7 +35,7 @@ def write_metadata(block_num, metadata):
     block[19:21]=disktools.int_to_bytes(metadata['size'], 1)
     block[21:22]=disktools.int_to_bytes(metadata['location'], 1)
 
-    block[22:38]=bytes(metadata['name'], 'utf-8')
+    block[22:38]=metadata['name'].encode('ascii')
 
     disktools.write_block(block_num, block)
 
@@ -64,8 +64,7 @@ metadata = dict(
     location=0,
     name='/')
 
-# clear disk
-disktools.low_level_format()
-# write metadata
-write_metadata(0, metadata)
+if __name__ == '__main__':
+    # write metadata
+    write_metadata(0, metadata)
 
