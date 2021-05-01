@@ -32,10 +32,10 @@ def write_metadata(block_num, metadata):
     block[14:18]=disktools.int_to_bytes(int(metadata['st_atime']), 4)
 
     block[18:19]=disktools.int_to_bytes(metadata['st_nlink'], 1)
-    block[19:21]=disktools.int_to_bytes(metadata['size'], 1)
-    block[21:22]=disktools.int_to_bytes(metadata['location'], 1)
+    block[19:21]=disktools.int_to_bytes(metadata['st_size'], 1)
+    block[21:22]=disktools.int_to_bytes(metadata['st_location'], 1)
 
-    block[22:38]=metadata['name'].encode('ascii')
+    block[22:38]=metadata['st_name'].encode('ascii')
 
     disktools.write_block(block_num, block)
 
@@ -60,9 +60,9 @@ metadata = dict(
     st_mtime=now,
     st_atime=now,
     st_nlink=2,
-    size=0,
-    location=0,
-    name='/')
+    st_size=0,
+    st_location=0,
+    st_name='/')
 
 if __name__ == '__main__':
     # write metadata
