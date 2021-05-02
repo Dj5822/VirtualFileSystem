@@ -11,14 +11,12 @@ from time import time
 
 from fuse import FUSE, FuseOSError, Operations, LoggingMixIn
 
-import format
+from format import empty_file_block_list
+from format import empty_data_block_list
 import os
 
 if not hasattr(__builtins__, 'bytes'):
     bytes = str
-
-def get_file_name(block_num):
-    return disktools.read_block(block_num)[22:38].decode()
 
 class Small(LoggingMixIn, Operations):
     'Example memory filesystem. Supports only one level of files.'
@@ -29,68 +27,116 @@ class Small(LoggingMixIn, Operations):
     We can store the file data in the other 12 blocks.
     """
     def __init__(self):
+        # System wide open file table.
+        self.files = {}
+
         self.fd = 0
         # Find out which blocks are empty and which are full.
-        for i in range(len(format.empty_file_block_list)):
+        for i in range(len(empty_file_block_list)):
             if disktools.bytes_to_int(disktools.read_block(i)[18:19]) != 0:
-                format.empty_file_block_list[i] = False
+                empty_file_block_list[i] = False
+                block = disktools.read_block(i)
+                name = block[22:38].decode()
+                if i == 0:
+                    name = '/'
+                # load metadata to memory.
+                self.files[name] = dict(
+                    st_mode=disktools.bytes_to_int(block[0:2]),
+                    st_uid=disktools.bytes_to_int(block[2:4]),
+                    st_gid=disktools.bytes_to_int(block[4:6]),
+                    st_ctime=disktools.bytes_to_int(block[6:10]),
+                    st_mtime=disktools.bytes_to_int(block[10:14]),
+                    st_atime=disktools.bytes_to_int(block[14:18]),
+                    st_nlink=disktools.bytes_to_int(block[18:19]),
+                    st_size=disktools.bytes_to_int(block[19:21]),
+                    st_location=disktools.bytes_to_int(block[21:22]),
+                    block_num=i)
+
+        self.create("test1", 777)
 
     def chmod(self, path, mode):
-        if (path == "/"):
-            file_name = "/"
-        else:
-            file_name = os.path.basename(path)
-        
-        # find the file that we are trying to write to.
-        for i in range(len(format.empty_file_block_list)):
-            if disktools.read_block(i)[22:22+len(file_name)].decode() == file_name:
-                block = disktools.read_block(i)
-                value = disktools.bytes_to_int(block[0:2]) & 0o770000
-                block[0:2] = disktools.int_to_bytes(value | mode, 2)
-                disktools.write_block(i, block)
-                break      
+        self.files[path]['st_mode'] &= 0o770000
+        self.files[path]['st_mode'] |= mode
+
+        block_num = self.files[path]['st_location']
+        block = disktools.read_block(block_num)
+        block[0:2] = disktools.int_to_bytes(self.files[path]['st_mode'], 2)
+        disktools.write_block(block_num, block)   
 
         return 0
 
     def chown(self, path, uid, gid):
-        if (path == "/"):
-            file_name = "/"
-        else:
-            file_name = os.path.basename(path)
+        self.files[path]['st_uid'] = uid
+        self.files[path]['st_gid'] = gid
 
-        print(disktools.read_block(0))
+        block_num = self.files[path]['st_location']
+        block = disktools.read_block(block_num)
+        block[2:4] = disktools.int_to_bytes(self.files[path]['st_uid'], 2)
+        block[2:4] = disktools.int_to_bytes(self.files[path]['st_mode'], 2)
+        disktools.write_block(block_num, block)  
         
-        # find the file that we are trying to write to.
-        for i in range(len(format.empty_file_block_list)):
-            if disktools.read_block(i)[22:22+len(file_name)].decode() == file_name:
-                block = disktools.read_block(i)
-                block[2:4] = disktools.int_to_bytes(uid, 2)
-                block[4:6] = disktools.int_to_bytes(gid, 2)
-                disktools.write_block(i, block)
-                break
-
-        print(disktools.read_block(0))
 
     # adds a new file by adding file attributes to the files dictionary.
     # whenever a file is created, fd will be incremented and returned (fd is basically the id for the file).
     # mode is the permissions that you want the file to have.
     def create(self, path, mode):
-        self.files[path] = dict(
+
+        file_name = os.path.basename(path)
+        block_num = -1
+        data_location = -1
+
+        # find an empty block for metadata
+        for i in range(len(empty_file_block_list)):
+            if empty_file_block_list[i] == True:
+                block_num = i
+
+        # find an empty block for data
+        for i in range(len(empty_data_block_list)):
+            if empty_data_block_list[i] == True:
+                data_location = i
+                empty_file_block_list[block_num] = False
+                empty_data_block_list[i] == False
+
+        self.files[file_name] = dict(
             st_mode=(S_IFREG | mode),
+            st_uid=1000,
+            st_gid=1000,
+            st_ctime=int(time()),
+            st_mtime=int(time()),
+            st_atime=int(time()),
             st_nlink=1,
             st_size=0,
-            # set create, modify, access times to the current time.
-            st_ctime=time(),
-            st_mtime=time(),
-            st_atime=time(),
-            st_uid=1000,
-            st_gid=1000)
+            st_location=data_location,
+            block_num=block_num)
+
+        if block_num != -1 and data_location != -1:
+            block = disktools.read_block(block_num)
+            block[0:2]=disktools.int_to_bytes(self.files[file_name]['st_mode'], 2)
+            block[2:4]=disktools.int_to_bytes(self.files[file_name]['st_uid'], 2)
+            block[4:6]=disktools.int_to_bytes(self.files[file_name]['st_gid'], 2)
+            
+            block[6:10]=disktools.int_to_bytes(self.files[file_name]['st_ctime'], 4)
+            block[10:14]=disktools.int_to_bytes(self.files[file_name]['st_mtime'], 4)
+            block[14:18]=disktools.int_to_bytes(self.files[file_name]['st_atime'], 4)
+
+            block[18:19]=disktools.int_to_bytes(self.files[file_name]['st_nlink'], 1)
+            block[19:21]=disktools.int_to_bytes(self.files[file_name]['st_size'], 1)
+            block[21:22]=disktools.int_to_bytes(self.files[file_name]['st_location'], 1)
+
+            block[22:38]=file_name.encode('ascii')
+
+            disktools.write_block(block_num, block)
+
+        # for testing
+        print(disktools.read_block(block_num))
+        print(len(disktools.read_block(block_num)))
 
         self.fd += 1
         return self.fd
 
     # if the file exists, then it will return the attributes of the file.
     def getattr(self, path, fh=None):
+        
         if path not in self.files:
             raise FuseOSError(ENOENT)
 
