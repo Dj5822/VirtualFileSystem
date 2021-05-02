@@ -232,8 +232,8 @@ class Small(LoggingMixIn, Operations):
     def read(self, path, size, offset, fh):
         # Get data location.
         block_num = self.files[path]['st_location']
-
-        return disktools.read_block(block_num)[offset:offset + size]
+        output = disktools.read_block(block_num)[:self.files[path]['st_size']]
+        return output.decode('ascii').encode('ascii')
 
     def readdir(self, path, fh):
         return ['.', '..'] + [x[1:] for x in self.files if x != '/']
