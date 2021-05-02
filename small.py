@@ -40,8 +40,14 @@ class Small(LoggingMixIn, Operations):
                 for char in block[22:38].decode('ascii'):
                     if char != b'\x00'.decode('ascii'):
                         name += char
+
+                if name != "/":
+                    path = "/" + name
+                else:
+                    path = name
+
                 # load metadata to memory.
-                self.files[name] = dict(
+                self.files[path] = dict(
                     st_mode=disktools.bytes_to_int(block[0:2]),
                     st_uid=disktools.bytes_to_int(block[2:4]),
                     st_gid=disktools.bytes_to_int(block[4:6]),
@@ -52,8 +58,9 @@ class Small(LoggingMixIn, Operations):
                     st_size=disktools.bytes_to_int(block[19:21]),
                     st_location=disktools.bytes_to_int(block[21:22]),
                     block_num=i)
-        
-        print(self.files)
+            
+                if self.files[path]['st_location'] != 0:
+                    empty_data_block_list[self.files[path]['st_location']-5] = False
 
     def chmod(self, path, mode):
         self.files[path]['st_mode'] &= 0o770000
@@ -81,7 +88,6 @@ class Small(LoggingMixIn, Operations):
     # whenever a file is created, fd will be incremented and returned (fd is basically the id for the file).
     # mode is the permissions that you want the file to have.
     def create(self, path, mode):
-
         file_name = os.path.basename(path)
         block_num = -1
         data_location = -1
@@ -90,13 +96,15 @@ class Small(LoggingMixIn, Operations):
         for i in range(len(empty_file_block_list)):
             if empty_file_block_list[i] == True:
                 block_num = i
+                break
 
         # find an empty block for data
         for i in range(len(empty_data_block_list)):
             if empty_data_block_list[i] == True:
-                data_location = i
+                data_location = i + 5
                 empty_file_block_list[block_num] = False
                 empty_data_block_list[i] == False
+                break
 
         self.files[path] = dict(
             st_mode=(S_IFREG | mode),
@@ -112,17 +120,17 @@ class Small(LoggingMixIn, Operations):
 
         if block_num != -1 and data_location != -1:
             block = disktools.read_block(block_num)
-            block[0:2]=disktools.int_to_bytes(self.files[file_name]['st_mode'], 2)
-            block[2:4]=disktools.int_to_bytes(self.files[file_name]['st_uid'], 2)
-            block[4:6]=disktools.int_to_bytes(self.files[file_name]['st_gid'], 2)
+            block[0:2]=disktools.int_to_bytes(self.files[path]['st_mode'], 2)
+            block[2:4]=disktools.int_to_bytes(self.files[path]['st_uid'], 2)
+            block[4:6]=disktools.int_to_bytes(self.files[path]['st_gid'], 2)
             
-            block[6:10]=disktools.int_to_bytes(self.files[file_name]['st_ctime'], 4)
-            block[10:14]=disktools.int_to_bytes(self.files[file_name]['st_mtime'], 4)
-            block[14:18]=disktools.int_to_bytes(self.files[file_name]['st_atime'], 4)
+            block[6:10]=disktools.int_to_bytes(self.files[path]['st_ctime'], 4)
+            block[10:14]=disktools.int_to_bytes(self.files[path]['st_mtime'], 4)
+            block[14:18]=disktools.int_to_bytes(self.files[path]['st_atime'], 4)
 
-            block[18:19]=disktools.int_to_bytes(self.files[file_name]['st_nlink'], 1)
-            block[19:21]=disktools.int_to_bytes(self.files[file_name]['st_size'], 1)
-            block[21:22]=disktools.int_to_bytes(self.files[file_name]['st_location'], 1)
+            block[18:19]=disktools.int_to_bytes(self.files[path]['st_nlink'], 1)
+            block[19:21]=disktools.int_to_bytes(self.files[path]['st_size'], 2)
+            block[21:22]=disktools.int_to_bytes(self.files[path]['st_location'], 1)
 
             block[22:38]=file_name.encode('ascii')
 
@@ -160,13 +168,15 @@ class Small(LoggingMixIn, Operations):
         for i in range(len(empty_file_block_list)):
             if empty_file_block_list[i] == True:
                 block_num = i
+                break
 
         # find an empty block for data
         for i in range(len(empty_data_block_list)):
             if empty_data_block_list[i] == True:
-                data_location = i
+                data_location = i + 5
                 empty_file_block_list[block_num] = False
                 empty_data_block_list[i] == False
+                break
 
         self.files[path] = dict(
             st_mode=(S_IFREG | mode),
@@ -182,17 +192,17 @@ class Small(LoggingMixIn, Operations):
 
         if block_num != -1 and data_location != -1:
             block = disktools.read_block(block_num)
-            block[0:2]=disktools.int_to_bytes(self.files[file_name]['st_mode'], 2)
-            block[2:4]=disktools.int_to_bytes(self.files[file_name]['st_uid'], 2)
-            block[4:6]=disktools.int_to_bytes(self.files[file_name]['st_gid'], 2)
+            block[0:2]=disktools.int_to_bytes(self.files[path]['st_mode'], 2)
+            block[2:4]=disktools.int_to_bytes(self.files[path]['st_uid'], 2)
+            block[4:6]=disktools.int_to_bytes(self.files[path]['st_gid'], 2)
             
-            block[6:10]=disktools.int_to_bytes(self.files[file_name]['st_ctime'], 4)
-            block[10:14]=disktools.int_to_bytes(self.files[file_name]['st_mtime'], 4)
-            block[14:18]=disktools.int_to_bytes(self.files[file_name]['st_atime'], 4)
+            block[6:10]=disktools.int_to_bytes(self.files[path]['st_ctime'], 4)
+            block[10:14]=disktools.int_to_bytes(self.files[path]['st_mtime'], 4)
+            block[14:18]=disktools.int_to_bytes(self.files[path]['st_atime'], 4)
 
-            block[18:19]=disktools.int_to_bytes(self.files[file_name]['st_nlink'], 1)
-            block[19:21]=disktools.int_to_bytes(self.files[file_name]['st_size'], 1)
-            block[21:22]=disktools.int_to_bytes(self.files[file_name]['st_location'], 1)
+            block[18:19]=disktools.int_to_bytes(self.files[path]['st_nlink'], 1)
+            block[19:21]=disktools.int_to_bytes(self.files[path]['st_size'], 2)
+            block[21:22]=disktools.int_to_bytes(self.files[path]['st_location'], 1)
 
             block[22:38]=file_name.encode('ascii')
 
@@ -207,7 +217,11 @@ class Small(LoggingMixIn, Operations):
 
     # starts reading from the offset until offset + size.
     def read(self, path, size, offset, fh):
-        return self.data[path][offset:offset + size]
+        # Get data location.
+        print(self.files[path]['st_location'])
+
+
+        return "temp"
 
     def readdir(self, path, fh):
         return ['.', '..'] + [x[1:] for x in self.files if x != '/']
