@@ -61,6 +61,16 @@ class Small(LoggingMixIn, Operations):
             
                 if self.files[path]['st_location'] != 0:
                     empty_data_block_list[self.files[path]['st_location']-5] = False
+                    # Check all the blocks that are linked to this block as well.
+                    block_num = self.files[path]['st_location']
+                    while block_num != 0:
+                        block = disktools.read_block(block_num)
+                        block_num = disktools.bytes_to_int(block[63:64])
+                        empty_data_block_list[block_num-5] = False
+
+        print(self.files)
+        print(empty_file_block_list)
+        print(empty_data_block_list)
 
     def chmod(self, path, mode):
         self.files[path]['st_mode'] &= 0o770000
@@ -179,7 +189,7 @@ class Small(LoggingMixIn, Operations):
                 break
 
         self.files[path] = dict(
-            st_mode=(S_IFREG | mode),
+            st_mode=(S_IFDIR | mode),
             st_uid=1000,
             st_gid=1000,
             st_ctime=int(time()),
@@ -208,7 +218,10 @@ class Small(LoggingMixIn, Operations):
 
             disktools.write_block(block_num, block)
 
-        self.files['/']['st_nlink'] += 1
+            self.files['/']['st_nlink'] += 1
+            block = disktools.read_block(0)
+            block[18:19]=disktools.int_to_bytes(self.files['/']['st_nlink'], 1)
+            disktools.write_block(0, block)
 
     # passes the file path of the file that you want open and increment the file descriptor.
     def open(self, path, flags):
@@ -218,10 +231,9 @@ class Small(LoggingMixIn, Operations):
     # starts reading from the offset until offset + size.
     def read(self, path, size, offset, fh):
         # Get data location.
-        print(self.files[path]['st_location'])
+        block_num = self.files[path]['st_location']
 
-
-        return "temp"
+        return disktools.read_block(block_num)[offset:offset + size]
 
     def readdir(self, path, fh):
         return ['.', '..'] + [x[1:] for x in self.files if x != '/']
@@ -283,13 +295,31 @@ class Small(LoggingMixIn, Operations):
     # and replaces it with the new data.
     # file size will also be updated.
     def write(self, path, data, offset, fh):
-        self.data[path] = (
-            # make sure the data gets inserted at the right offset
-            self.data[path][:offset].ljust(offset, '\x00'.encode('ascii'))
-            + data
-            # and only overwrites the bytes that data is replacing
-            + self.data[path][offset + len(data):])
-        self.files[path]['st_size'] = len(self.data[path])
+        # only the first 63 blocks can have data written into.
+        # the last block is a pointer to the linked block.
+        
+        # get the current data.
+        block_num = self.files[path]['st_location']
+        block = disktools.read_block(block_num)
+        current_data = block[:self.files[path]['st_size']]
+
+        # get current metadata.
+        metadata_block_num = self.files[path]['block_num']
+        metadata_block = disktools.read_block(metadata_block_num)
+
+        # creates the new data.
+        new_data = (current_data[:offset].ljust(offset, '\x00'.encode('ascii'))
+        + data
+        + current_data[offset + len(data):])
+
+        # update metadata.
+        self.files[path]['st_size'] = len(new_data)
+        metadata_block[19:21] = disktools.int_to_bytes(self.files[path]['st_size'], 2)
+        
+        # write to disk.
+        disktools.write_block(block_num, new_data)
+        disktools.write_block(metadata_block_num, metadata_block)
+
         return len(data)
 
 
