@@ -289,8 +289,16 @@ class Small(LoggingMixIn, Operations):
 
     def rmdir(self, path):
         # with multiple level support, need to raise ENOTEMPTY if contains any files
-        self.files.pop(path)
+        removed_file = self.files.pop(path)
         self.files['/']['st_nlink'] -= 1
+
+        block_num = removed_file['block_num']
+        empty_file_block_list[block_num] = True
+        disktools.write_block(block_num, bytearray(64))
+
+        block = disktools.read_block(0)
+        block[18:19]=disktools.int_to_bytes(self.files['/']['st_nlink'], 1)
+        disktools.write_block(0, block)
 
     def setxattr(self, path, name, value, options, position=0):
         # Ignore options
