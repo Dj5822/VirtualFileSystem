@@ -14,6 +14,7 @@ from fuse import FUSE, FuseOSError, Operations, LoggingMixIn
 from format import empty_file_block_list
 from format import empty_data_block_list
 import os
+import math
 
 if not hasattr(__builtins__, 'bytes'):
     bytes = str
@@ -299,25 +300,53 @@ class Small(LoggingMixIn, Operations):
         # the last block is a pointer to the linked block.
         
         # get the current data.
+        blocks_used = []
+        current_data = b''
+
+        # Check all the blocks that are linked to this block as well.
         block_num = self.files[path]['st_location']
-        block = disktools.read_block(block_num)
-        current_data = block[:self.files[path]['st_size']]
+        blocks_used.append(block_num)
+        while block_num != 0:
+            block = disktools.read_block(block_num)
+            current_data += block[0:63]
+            block_num = disktools.bytes_to_int(block[63:64])
+            blocks_used.append(block_num)
 
         # get current metadata.
         metadata_block_num = self.files[path]['block_num']
         metadata_block = disktools.read_block(metadata_block_num)
+        file_size = disktools.bytes_to_int(metadata_block[19:21])
+
+        current_data = current_data[0:file_size]
 
         # creates the new data.
-        new_data = (current_data[:offset].ljust(offset, '\x00'.encode('ascii'))
+        new_data = current_data[:offset].ljust(offset, '\x00'.encode('ascii'))
         + data
-        + current_data[offset + len(data):])
+        + current_data[offset + len(data):]
 
         # update metadata.
         self.files[path]['st_size'] = len(new_data)
+        self.files[path]['st_mtime'] = int(time())
         metadata_block[19:21] = disktools.int_to_bytes(self.files[path]['st_size'], 2)
+        metadata_block[10:14]=disktools.int_to_bytes(self.files[path]['st_mtime'], 4)
+
+        print(new_data)
+
+        """
+        # assign new blocks to be used.
+        while len(blocks_used) < math.ceil(self.files[path]['st_size']/63):
+            # find empty block
+            for i in range(len(empty_data_block_list)):
+                if empty_data_block_list[i]:
+                    blocks_used.append(i+5)
+                    empty_data_block_list[i] = False
+                    break
         
         # write to disk.
-        disktools.write_block(block_num, new_data)
+        for i in range(len(blocks_used)):
+            disktools.write_block(blocks_used[i], new_data[63*(i):63*(i+1)])
+        """
+
         disktools.write_block(metadata_block_num, metadata_block)
 
         return len(data)
