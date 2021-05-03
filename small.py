@@ -246,6 +246,11 @@ class Small(LoggingMixIn, Operations):
         metadata_block = disktools.read_block(metadata_block_num)
         file_size = disktools.bytes_to_int(metadata_block[19:21])
 
+        #update access time.
+        self.files[path]['st_atime'] = int(time())
+        metadata_block[14:18] = disktools.int_to_bytes(self.files[path]['st_atime'])
+        disktools.write_block(metadata_block_num, metadata_block)
+
         current_data = current_data[0:file_size]
 
         return current_data[offset:offset + size]
