@@ -325,7 +325,6 @@ class Small(LoggingMixIn, Operations):
         self.files[path]['st_size'] = length
 
     def unlink(self, path):
-        """
         # get the current data.
         blocks_used = []
 
@@ -335,10 +334,20 @@ class Small(LoggingMixIn, Operations):
         while block_num != 0:
             block = disktools.read_block(block_num)
             block_num = disktools.bytes_to_int(block[63:64])
-            blocks_used.append(block_num)
-        """
+            if block_num != 0:
+                blocks_used.append(block_num)
 
-
+        print(blocks_used)
+        
+        # Disable these blocks and remove their pointers.
+        for i in range(len(blocks_used)):
+            empty_data_block_list[blocks_used[i]-5] = True
+            disktools.write_block(blocks_used[i], bytearray(64))
+        
+        # Delete metadata
+        block_num = self.files[path]['block_num']
+        empty_file_block_list[block_num] = True
+        disktools.write_block(block_num, bytearray(64))
         self.files.pop(path)
 
     def utimens(self, path, times=None):
