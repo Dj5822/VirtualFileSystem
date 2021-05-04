@@ -246,11 +246,6 @@ class Small(LoggingMixIn, Operations):
         metadata_block = disktools.read_block(metadata_block_num)
         file_size = disktools.bytes_to_int(metadata_block[19:21])
 
-        #update access time.
-        self.files[path]['st_atime'] = int(time())
-        metadata_block[14:18] = disktools.int_to_bytes(self.files[path]['st_atime'])
-        disktools.write_block(metadata_block_num, metadata_block)
-
         current_data = current_data[0:file_size]
 
         return current_data[offset:offset + size]
@@ -337,6 +332,12 @@ class Small(LoggingMixIn, Operations):
         self.files[path]['st_atime'] = atime
         self.files[path]['st_mtime'] = mtime
 
+        block_num = self.files[path]['block_num']
+        block = disktools.read_block(block_num)
+        block[10:14]=disktools.int_to_bytes(self.files[path]['st_mtime'], 4)
+        block[14:18]=disktools.int_to_bytes(self.files[path]['st_atime'], 4)
+        disktools.write_block(block_num, block)
+
     # receives the file path, data, and offset.
     # modifies the file data such that it removes everything after the offset
     # and replaces it with the new data.
@@ -372,9 +373,7 @@ class Small(LoggingMixIn, Operations):
 
         # update metadata.
         self.files[path]['st_size'] = len(new_data)
-        self.files[path]['st_mtime'] = int(time())
         metadata_block[19:21] = disktools.int_to_bytes(self.files[path]['st_size'], 2)
-        metadata_block[10:14]=disktools.int_to_bytes(self.files[path]['st_mtime'], 4)
 
         # assign new blocks to be used.
         while len(blocks_used) < math.ceil(self.files[path]['st_size']/63):
@@ -388,7 +387,6 @@ class Small(LoggingMixIn, Operations):
         # write to disk.
         for i in range(len(blocks_used)):
             disktools.write_block(blocks_used[i], new_data[63*(i):63*(i+1)])
-
         disktools.write_block(metadata_block_num, metadata_block)
 
         return len(data)
