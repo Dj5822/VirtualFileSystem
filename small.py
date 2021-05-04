@@ -319,10 +319,65 @@ class Small(LoggingMixIn, Operations):
         self.data[target] = source
 
     def truncate(self, path, length, fh=None):
+
+        # get the current data.
+        blocks_used = []
+        current_data = b''
+
+        # Check all the blocks that are linked to this block as well.
+        block_num = self.files[path]['st_location']
+        blocks_used.append(block_num)
+        while block_num != 0:
+            block = disktools.read_block(block_num)
+            current_data += block[0:63]
+            block_num = disktools.bytes_to_int(block[63:64])
+            if block_num != 0:
+                blocks_used.append(block_num)
+
+        # get current metadata.
+        metadata_block_num = self.files[path]['block_num']
+        metadata_block = disktools.read_block(metadata_block_num)
+        file_size = disktools.bytes_to_int(metadata_block[19:21])
+
+        current_data = current_data[0:file_size]
+
         # make sure extending the file fills in zero bytes
-        self.data[path] = self.data[path][:length].ljust(
+        new_data = current_data[:length].ljust(
             length, '\x00'.encode('ascii'))
+
+        if self.files[path]['st_size'] < length:
+            # assign new blocks to be used.
+            while len(blocks_used) < math.ceil(length/63):
+                # find empty block
+                for i in range(len(empty_data_block_list)):
+                    if empty_data_block_list[i]:
+                        blocks_used.append(i+5)
+                        empty_data_block_list[i] = False
+                        break
+                
+                # write to disk.
+            for i in range(len(blocks_used)):
+                # if last block
+                if i+1 >= len(blocks_used):
+                    disktools.write_block(blocks_used[i], new_data[63*(i):63*(i+1)]+disktools.int_to_bytes(0, 1))
+                else:
+                    disktools.write_block(blocks_used[i], new_data[63*(i):63*(i+1)]+disktools.int_to_bytes(blocks_used[i+1], 1))
+
+        elif self.files[path]['st_size'] > length:
+            new_blocks = blocks_used[0:math.ceil(length/63)]
+            while len(new_blocks) < len(blocks_used):    
+                last_block = blocks_used.pop()
+                disktools.write_block(last_block, bytearray(64))
+                empty_data_block_list[last_block-5] = True
+        
+        block = disktools.read_block(blocks_used[len(blocks_used)-1])
+        disktools.write_block(blocks_used[len(blocks_used)-1], block[0:63]+'\x00'.encode('ascii'))      
+
+        # Update size.
         self.files[path]['st_size'] = length
+        metadata_block[19:21] = disktools.int_to_bytes(self.files[path]['st_size'], 2)
+        disktools.write_block(metadata_block_num, metadata_block)
+
 
     def unlink(self, path):
         # get the current data.
