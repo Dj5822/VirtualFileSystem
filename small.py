@@ -68,11 +68,13 @@ class Small(LoggingMixIn, Operations):
                         block = disktools.read_block(block_num)
                         block_num = disktools.bytes_to_int(block[63:64])
                         empty_data_block_list[block_num-5] = False
-                        print(block_num)
 
+        # For testing purposes.
+        """
         print(self.files)
         print(empty_file_block_list)
         print(empty_data_block_list)
+        """
 
     def chmod(self, path, mode):
         self.files[path]['st_mode'] &= 0o770000
