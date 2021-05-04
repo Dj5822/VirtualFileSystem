@@ -1,5 +1,6 @@
 import disktools
 import time
+import os
 
 from stat import S_IFDIR, S_IFLNK, S_IFREG
 
@@ -54,8 +55,8 @@ now = time.time()
 
 metadata = dict(
     st_mode=(S_IFDIR | 0o755),
-    st_uid=1000,
-    st_gid=1000,
+    st_uid=os.getuid(),
+    st_gid=os.getgid(),
     st_ctime=now,
     st_mtime=now,
     st_atime=now,

@@ -119,8 +119,8 @@ class Small(LoggingMixIn, Operations):
 
         self.files[path] = dict(
             st_mode=(S_IFREG | mode),
-            st_uid=1000,
-            st_gid=1000,
+            st_uid=os.getuid(),
+            st_gid=os.getgid(),
             st_ctime=int(time()),
             st_mtime=int(time()),
             st_atime=int(time()),
@@ -231,10 +231,9 @@ class Small(LoggingMixIn, Operations):
 
     # starts reading from the offset until offset + size.
     def read(self, path, size, offset, fh):
-        # get the current data.
         current_data = b''
 
-        # Check all the blocks that are linked to this block as well.
+        # get the current data.
         block_num = self.files[path]['st_location']
         while block_num != 0:
             block = disktools.read_block(block_num)
@@ -323,7 +322,20 @@ class Small(LoggingMixIn, Operations):
         self.files[path]['st_size'] = length
 
     def unlink(self, path):
-        self.data.pop(path)
+        """
+        # get the current data.
+        blocks_used = []
+
+        # Check all the blocks that are linked to this block as well.
+        block_num = self.files[path]['st_location']
+        blocks_used.append(block_num)
+        while block_num != 0:
+            block = disktools.read_block(block_num)
+            block_num = disktools.bytes_to_int(block[63:64])
+            blocks_used.append(block_num)
+        """
+
+
         self.files.pop(path)
 
     def utimens(self, path, times=None):
@@ -357,7 +369,8 @@ class Small(LoggingMixIn, Operations):
             block = disktools.read_block(block_num)
             current_data += block[0:63]
             block_num = disktools.bytes_to_int(block[63:64])
-            blocks_used.append(block_num)
+            if block_num != 0:
+                blocks_used.append(block_num)
 
         # get current metadata.
         metadata_block_num = self.files[path]['block_num']
@@ -366,7 +379,7 @@ class Small(LoggingMixIn, Operations):
 
         current_data = current_data[0:file_size]
 
-        # creates the new data.
+        # create the new data.
         new_data = (current_data[:offset].ljust(offset, '\x00'.encode('ascii'))
         + data
         + current_data[offset + len(data):])
@@ -384,10 +397,14 @@ class Small(LoggingMixIn, Operations):
                     empty_data_block_list[i] = False
                     break
         
+        print(blocks_used)
+
         # write to disk.
         for i in range(len(blocks_used)):
             disktools.write_block(blocks_used[i], new_data[63*(i):63*(i+1)])
         disktools.write_block(metadata_block_num, metadata_block)
+
+
 
         return len(data)
 
