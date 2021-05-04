@@ -311,12 +311,15 @@ class Small(LoggingMixIn, Operations):
         return dict(f_bsize=512, f_blocks=4096, f_bavail=2048)
 
     def symlink(self, target, source):
+        # Not implemented.
+        """
         self.files[target] = dict(
             st_mode=(S_IFLNK | 0o777),
             st_nlink=1,
             st_size=len(source))
 
         self.data[target] = source
+        """
 
     def truncate(self, path, length, fh=None):
 
