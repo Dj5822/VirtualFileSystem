@@ -68,6 +68,7 @@ class Small(LoggingMixIn, Operations):
                         block = disktools.read_block(block_num)
                         block_num = disktools.bytes_to_int(block[63:64])
                         empty_data_block_list[block_num-5] = False
+                        print(block_num)
 
         print(self.files)
         print(empty_file_block_list)
@@ -111,10 +112,10 @@ class Small(LoggingMixIn, Operations):
 
         # find an empty block for data
         for i in range(len(empty_data_block_list)):
-            if empty_data_block_list[i] == True:
+            if empty_data_block_list[i]:
                 data_location = i + 5
                 empty_file_block_list[block_num] = False
-                empty_data_block_list[i] == False
+                empty_data_block_list[i] = False
                 break
 
         self.files[path] = dict(
@@ -341,8 +342,8 @@ class Small(LoggingMixIn, Operations):
     def utimens(self, path, times=None):
         now = time()
         atime, mtime = times if times else (now, now)
-        self.files[path]['st_atime'] = atime
-        self.files[path]['st_mtime'] = mtime
+        self.files[path]['st_atime'] = int(atime)
+        self.files[path]['st_mtime'] = int(mtime)
 
         block_num = self.files[path]['block_num']
         block = disktools.read_block(block_num)
@@ -388,6 +389,8 @@ class Small(LoggingMixIn, Operations):
         self.files[path]['st_size'] = len(new_data)
         metadata_block[19:21] = disktools.int_to_bytes(self.files[path]['st_size'], 2)
 
+        print(empty_data_block_list)
+
         # assign new blocks to be used.
         while len(blocks_used) < math.ceil(self.files[path]['st_size']/63):
             # find empty block
@@ -401,10 +404,13 @@ class Small(LoggingMixIn, Operations):
 
         # write to disk.
         for i in range(len(blocks_used)):
-            disktools.write_block(blocks_used[i], new_data[63*(i):63*(i+1)])
+            # if last block
+            if i+1 >= len(blocks_used):
+                disktools.write_block(blocks_used[i], new_data[63*(i):63*(i+1)]+disktools.int_to_bytes(0, 1))
+            else:
+                disktools.write_block(blocks_used[i], new_data[63*(i):63*(i+1)]+disktools.int_to_bytes(blocks_used[i+1], 1))
+
         disktools.write_block(metadata_block_num, metadata_block)
-
-
 
         return len(data)
 
